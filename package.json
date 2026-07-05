@@ -1,0 +1,44 @@
+{
+  "name": "typestm",
+  "productName": "TypesTM",
+  "version": "0.1.0",
+  "description": "Translation Memory engine",
+  "keywords": [
+    "Translation Memory",
+    "TM",
+    "TMX"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "/dist"
+  ],
+  "scripts": {
+    "build": "tsc && node dist/copyResources.js"
+  },
+  "author": {
+    "name": "Rodolfo M. Raya",
+    "url": "https://maxprograms.com",
+    "email": "rmraya@maxprograms.com"
+  },
+  "license": "EPL-1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maxprograms-com/TypesTM.git"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "typesxml": "^2.2.0"
+  }
+}

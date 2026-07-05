@@ -1,0 +1,8 @@
+{
+    "tmUtils": {
+        "invalidSegment": "No se puede analizar el contenido del segmento: {0}"
+    },
+    "translationMemory": {
+        "invalidLanguageTag": "Etiqueta de idioma no válida para el índice de ngramas: '{0}'"
+    }
+}

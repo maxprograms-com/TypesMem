@@ -1,0 +1,8 @@
+{
+    "tmUtils": {
+        "invalidSegment": "Unable to parse segment content: {0}"
+    },
+    "translationMemory": {
+        "invalidLanguageTag": "Invalid language tag for ngram index: '{0}'"
+    }
+}
