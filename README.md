@@ -1,11 +1,11 @@
-# TypesTM
+# TypesMem
 
 [![TypeScript](https://img.shields.io/badge/implementation-native%20TypeScript-3178c6)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-EPL--1.0-blue)](LICENSE)
 
-TypesTM is a TypeScript translation memory engine backed by SQLite. It stores translation units (TUs) with full TMX 1.4 fidelity, imports and exports TMX files, and provides fuzzy and concordance search over the stored content.
+TypesMem is a TypeScript translation memory engine backed by SQLite. It stores translation units (TUs) with full TMX 1.4 fidelity, imports and exports TMX files, and provides fuzzy and concordance search over the stored content.
 
-## Why TypesTM
+## Why TypesMem
 
 - **No native bindings.** Storage is built on `node:sqlite`, which ships with Node.js itself — no native module to compile, no ABI mismatches under Electron or across platforms.
 - **CJK-friendly fuzzy matching.** Matching uses a custom 3-character sliding-window (trigram) index instead of SQLite's FTS5, since FTS5's tokenizers don't segment Chinese, Japanese, or Korean text well. The index is language-scoped, so each language's trigrams are matched independently.
@@ -16,7 +16,7 @@ TypesTM is a TypeScript translation memory engine backed by SQLite. It stores tr
 ## Installation
 
 ```bash
-npm install typestm
+npm install typesmem
 ```
 
 ## Quick Start
@@ -24,7 +24,7 @@ npm install typestm
 ### Import a TMX file, search it, export it back out
 
 ```ts
-import { TranslationMemory } from "typestm";
+import { TranslationMemory } from "typesmem";
 
 const tm = new TranslationMemory("myMemory", "/path/to/memories");
 
@@ -46,7 +46,7 @@ tm.close();
 ### Store and retrieve a single translation unit
 
 ```ts
-import { TranslationMemory } from "typestm";
+import { TranslationMemory } from "typesmem";
 import { XMLAttribute, XMLElement } from "typesxml";
 
 const tm = new TranslationMemory("myMemory", "/path/to/memories");
@@ -82,7 +82,7 @@ tm.close();
 
 | Method | Description |
 | --- | --- |
-| `new TranslationMemory(name, workFolder, lang?)` | Opens (or creates) a memory named `name` under `workFolder`. `lang` selects the language for TypesTM's own error messages (`"en"` or `"es"`, default `"en"`) — it has nothing to do with the languages stored in the memory. |
+| `new TranslationMemory(name, workFolder, lang?)` | Opens (or creates) a memory named `name` under `workFolder`. `lang` selects the language for TypesMem's own error messages (`"en"` or `"es"`, default `"en"`) — it has nothing to do with the languages stored in the memory. |
 | `getName()` / `getType()` | Returns the memory's name, and `"Local"` as its engine type. |
 | `close()` | Closes the underlying database connection. |
 | `deleteDatabase()` | Closes the connection and deletes the memory's folder. Don't call `close()` first — this already closes it. |

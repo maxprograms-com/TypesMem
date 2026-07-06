@@ -1,6 +1,6 @@
 {
-  "name": "typestm",
-  "productName": "TypesTM",
+  "name": "typesmem",
+  "productName": "TypesMem",
   "version": "0.1.0",
   "description": "Translation Memory engine",
   "keywords": [
@@ -22,7 +22,8 @@
     "/dist"
   ],
   "scripts": {
-    "build": "tsc && node dist/copyResources.js"
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc && node dist/copyResources.js"
   },
   "author": {
     "name": "Rodolfo M. Raya",
@@ -32,7 +33,7 @@
   "license": "EPL-1.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/maxprograms-com/TypesTM.git"
+    "url": "https://github.com/maxprograms-com/TypesMem.git"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",

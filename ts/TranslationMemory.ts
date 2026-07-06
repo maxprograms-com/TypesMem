@@ -80,7 +80,7 @@ export class TranslationMemory {
 
         let normalizedLang: string = lang !== undefined && SUPPORTED_LANGUAGES.includes(lang) ? lang : 'en';
         let moduleDir: string = dirname(fileURLToPath(import.meta.url));
-        let resourcesFile: string = join(moduleDir, 'i18n', 'typestm_' + normalizedLang + '.json');
+        let resourcesFile: string = join(moduleDir, 'i18n', 'typesmem_' + normalizedLang + '.json');
         this.i18n = new I18n(resourcesFile);
 
         this.memoryFolder = join(workFolder, name);
