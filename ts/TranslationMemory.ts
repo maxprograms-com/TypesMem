@@ -16,7 +16,7 @@ import { DatabaseSync, StatementSync, type SQLOutputValue, type StatementResulti
 import { fileURLToPath } from "node:url";
 import { Catalog, Indenter, SAXParser, XMLAttribute, XMLElement } from "typesxml";
 import { I18n } from "./i18n.js";
-import type { Match } from "./Match.js";
+import type { Match } from "typesmatch";
 import { MatchQuality } from "./MatchQuality.js";
 import { NGrams } from "./NGrams.js";
 import { TMUtils } from "./TMUtils.js";
@@ -539,6 +539,7 @@ export class TranslationMemory {
                 source: this.buildTuvElement(candidates[i].sourceRow),
                 target: this.buildTuvElement(targetRow),
                 origin: this.name,
+                type: 'tm',
                 similarity: candidates[i].distance,
                 properties: properties
             });

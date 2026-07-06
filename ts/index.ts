@@ -11,5 +11,4 @@
  *******************************************************************************/
 
 export { I18n } from "./i18n.js";
-export type { Match } from "./Match.js";
 export { TranslationMemory } from "./TranslationMemory.js";
