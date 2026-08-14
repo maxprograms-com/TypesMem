@@ -93,6 +93,14 @@ export class TranslationMemory {
         this.db = new DatabaseSync(databaseFile);
         this.db.exec('PRAGMA journal_mode = WAL');
         this.db.exec('PRAGMA synchronous = NORMAL');
+        this.db.function('TEXT_MATCHES', { deterministic: true }, (value: unknown, pattern: unknown): number => {
+            try {
+                let regex: RegExp = new RegExp(String(pattern));
+                return regex.test(value === null || value === undefined ? '' : String(value)) ? 1 : 0;
+            } catch (error) {
+                return 0;
+            }
+        });
 
         if (isNew) {
             this.createSchema();
@@ -635,14 +643,22 @@ export class TranslationMemory {
         return rows.map((row: Record<string, SQLOutputValue>): string => row.value as string);
     }
 
-    concordanceSearch(text: string, srcLang: string, limit?: number, caseSensitive?: boolean): Array<XMLElement> {
+    concordanceSearch(text: string, srcLang: string, limit?: number, isRegexp?: boolean, caseSensitive?: boolean): Array<XMLElement> {
         if (text.trim() === '') {
             return [];
+        }
+        if (isRegexp === true) {
+            // validated upfront so an invalid pattern throws here instead of being
+            // silently swallowed by TEXT_MATCHES, which returns 0 (no match) on error
+            new RegExp(text);
         }
 
         let pattern: string;
         let sql: string;
-        if (caseSensitive === true) {
+        if (isRegexp === true) {
+            pattern = text;
+            sql = 'SELECT DISTINCT tuId FROM tuv WHERE lang = ? AND TEXT_MATCHES(puretext, ?)';
+        } else if (caseSensitive === true) {
             pattern = '*' + text + '*';
             sql = 'SELECT DISTINCT tuId FROM tuv WHERE lang = ? AND puretext GLOB ?';
         } else {

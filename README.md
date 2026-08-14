@@ -101,7 +101,7 @@ tm.close();
 | --- | --- |
 | `searchTranslation(text, srcLang, tgtLang, similarity, limit?, caseSensitive?)` | Fuzzy-matches `text` against `srcLang` segments (`similarity` is 0-100) and returns `Match[]` — each with `source`/`target` `<tuv>` elements, a `similarity` score, `origin`, and `properties` — for translation units that also have a `tgtLang` variant. |
 | `searchAll(text, srcLang, similarity, limit?, caseSensitive?)` | Same fuzzy matching as `searchTranslation`, but only requires a `srcLang` match; returns the full `<tu>` element for each hit regardless of what other languages it has. |
-| `concordanceSearch(text, srcLang, limit?, caseSensitive?)` | Plain substring search (not fuzzy) against stored `srcLang` text, returning full `<tu>` elements. |
+| `concordanceSearch(text, srcLang, limit?, isRegexp?, caseSensitive?)` | Substring or regex search (not fuzzy) against stored `srcLang` text, returning full `<tu>` elements. When `isRegexp` is `true`, `text` is compiled as a regular expression and matching is always case-sensitive, regardless of `caseSensitive`. |
 | `getMetadataValues(field)` | Returns the distinct values stored for a given metadata/property field name, across the whole memory. |
 
 ### TMX import/export
