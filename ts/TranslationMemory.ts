@@ -243,6 +243,15 @@ export class TranslationMemory {
         return 'Local';
     }
 
+    getAllLanguages(): Array<string> {
+        let languages: Set<string> = new Set<string>();
+        let rows: Array<Record<string, SQLOutputValue>> = this.db.prepare('SELECT DISTINCT lang FROM tuv ORDER BY lang').all();
+        for (let row of rows) {
+            languages.add(row.lang as string);
+        }
+        return Array.from(languages);
+    }
+
     storeTu(tu: XMLElement, metadata?: Record<string, string>): string {
         this.db.exec('SAVEPOINT storeTu');
         try {
