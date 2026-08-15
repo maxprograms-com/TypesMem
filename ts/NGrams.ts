@@ -20,7 +20,12 @@ export class NGrams {
     }
 
     static getNGrams(text: string, lang: string): Array<string> {
-        let normalized: string = text.toLocaleLowerCase(lang).trim();
+        let normalized: string = '';
+        try {
+            normalized = text.toLocaleLowerCase(lang).trim();
+        } catch (e) {
+            normalized = text.toLowerCase().trim();
+        }
         if (normalized === '') {
             return [];
         }

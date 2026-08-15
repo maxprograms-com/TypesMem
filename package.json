@@ -40,7 +40,8 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "typesxml": "^2.4.1",
-    "typesmatch": "^0.1.0"
+    "typesbcp47": "^1.24.2",
+    "typesmatch": "^0.1.0",
+    "typesxml": "^2.4.1"
   }
 }

@@ -21,9 +21,9 @@ import { MatchQuality } from "./MatchQuality.js";
 import { NGrams } from "./NGrams.js";
 import { TMUtils } from "./TMUtils.js";
 import { TMXContentHandler } from "./TMXContentHandler.js";
+import { LanguageUtils } from "typesbcp47";
 
 const SUPPORTED_LANGUAGES: Array<string> = ['en', 'es'];
-const LANGUAGE_TAG_PATTERN: RegExp = /^[A-Za-z0-9-]{1,35}$/;
 
 interface FuzzyCandidate {
     id: number;
@@ -69,6 +69,8 @@ export class TranslationMemory {
     private deleteTuvNotesStatement: StatementSync;
 
     private selectMetadataValuesStatement: StatementSync;
+    private safeLangs: Set<string> = new Set<string>();
+
 
     constructor(name: string, workFolder: string, lang?: string) {
         this.name = name;
@@ -609,7 +611,7 @@ export class TranslationMemory {
             }
         }
 
-        let compareText: string = caseSensitive === true ? text : text.toLocaleLowerCase(srcLang);
+        let compareText: string = caseSensitive === true ? text : this.safeLowerCase(text, srcLang);
         let entries: Array<[number, number]> = Array.from(counts.entries());
         let results: Array<FuzzyCandidate> = [];
         for (let i: number = 0; i < entries.length; i++) {
@@ -628,7 +630,7 @@ export class TranslationMemory {
                 continue;
             }
             let candidateText: string = sourceRow.puretext as string;
-            let distance: number = MatchQuality.similarity(compareText, caseSensitive === true ? candidateText : candidateText.toLocaleLowerCase(srcLang));
+            let distance: number = MatchQuality.similarity(compareText, caseSensitive === true ? candidateText : this.safeLowerCase(candidateText, srcLang));
             if (distance < similarity) {
                 continue;
             }
@@ -636,6 +638,19 @@ export class TranslationMemory {
             results.push({ id: id, distance: distance, sourceRow: sourceRow });
         }
         return results;
+    }
+
+
+    private safeLowerCase(text: string, lang: string): string {
+        if (this.safeLangs.has(lang)) {
+            return text.toLocaleLowerCase(lang);
+        }
+        let code: string | undefined = LanguageUtils.normalizeCode(lang);
+        if (code) {
+            this.safeLangs.add(code);
+            return text.toLocaleLowerCase(code);
+        }
+        return text.toLowerCase();
     }
 
     getMetadataValues(field: string): Array<string> {
@@ -923,10 +938,25 @@ export class TranslationMemory {
     }
 
     private validatedLangTag(lang: string): string {
-        if (!LANGUAGE_TAG_PATTERN.test(lang)) {
-            throw new Error(this.i18n.format(this.i18n.getString('translationMemory', 'invalidLanguageTag'), [lang]));
+        if (this.safeLangs.has(lang)) {
+            return lang.replace(/-/g, '_');
         }
-        return lang.replace(/-/g, '_');
+        let code: string | undefined = LanguageUtils.normalizeCode(lang);
+        if (code) {
+            this.safeLangs.add(code);
+            return code.replace(/-/g, '_');
+        }
+        let safeLang = '';
+        for (let i: number = 0; i < lang.length; i++) {
+            let c: string = lang.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '-') {
+                safeLang += c;
+            }
+            if (c === '-') {
+                safeLang += '_';
+            }
+        }
+        return safeLang;
     }
 
     private ensureDeltaNgramTable(lang: string): string {
