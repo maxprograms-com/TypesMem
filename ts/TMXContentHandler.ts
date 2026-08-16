@@ -11,7 +11,7 @@
  *******************************************************************************/
 
 import { Catalog, ContentHandler, Grammar, XMLAttribute, XMLElement } from "typesxml";
-import { TranslationMemory } from "./TranslationMemory.js";
+import { BATCH_SIZE, TranslationMemory } from "./TranslationMemory.js";
 
 export class TMXContentHandler implements ContentHandler {
 
@@ -96,7 +96,7 @@ export class TMXContentHandler implements ContentHandler {
         if (name === 'tu') {
             this.translationMemory.storeTu(this.current, this.metadata);
             this.count++;
-            if (this.count % 500 === 0) {
+            if (this.count % BATCH_SIZE === 0) {
                 // commit periodically instead of leaving the whole import as one giant transaction,
                 // and compact the ngram delta table at the same cadence so it never grows large
                 this.translationMemory.commit();
