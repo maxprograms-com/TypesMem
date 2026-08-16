@@ -14,14 +14,14 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, write
 import { dirname, join } from "node:path";
 import { DatabaseSync, StatementSync, type SQLOutputValue, type StatementResultingChanges } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { LanguageUtils } from "typesbcp47";
+import type { Match } from "typesmatch";
 import { Catalog, Indenter, SAXParser, XMLAttribute, XMLElement } from "typesxml";
 import { I18n } from "./i18n.js";
-import type { Match } from "typesmatch";
 import { MatchQuality } from "./MatchQuality.js";
 import { NGrams } from "./NGrams.js";
 import { TMUtils } from "./TMUtils.js";
 import { TMXContentHandler } from "./TMXContentHandler.js";
-import { LanguageUtils } from "typesbcp47";
 
 const SUPPORTED_LANGUAGES: Array<string> = ['en', 'es'];
 
@@ -61,16 +61,19 @@ export class TranslationMemory {
     private selectTuvStatement: StatementSync;
     private selectTuvByLangStatement: StatementSync;
     private deleteTuvStatement: StatementSync;
+    private deleteTuvByLangStatement: StatementSync;
     private insertTuvPropertyStatement: StatementSync;
     private selectTuvPropertiesStatement: StatementSync;
     private deleteTuvPropertiesStatement: StatementSync;
+    private deleteTuvPropertiesByLangStatement: StatementSync;
     private insertTuvNoteStatement: StatementSync;
     private selectTuvNotesStatement: StatementSync;
     private deleteTuvNotesStatement: StatementSync;
+    private deleteTuvNotesByLangStatement: StatementSync;
 
     private selectMetadataValuesStatement: StatementSync;
-    private safeLangs: Set<string> = new Set<string>();
-
+    private safeLangs: Map<string, string> = new Map<string, string>();
+    private langCache: Map<string, string> = new Map<string, string>();
 
     constructor(name: string, workFolder: string, lang?: string) {
         this.name = name;
@@ -144,16 +147,21 @@ export class TranslationMemory {
             'creationtool, creationtoolversion, creationdate, creationid, changedate, changeid, oTmf ' +
             'FROM tuv WHERE tuId = ? AND lang = ?');
         this.deleteTuvStatement = this.db.prepare('DELETE FROM tuv WHERE tuId = ?');
+        this.deleteTuvByLangStatement = this.db.prepare('DELETE FROM tuv WHERE tuId = ? AND lang = ?');
 
         this.insertTuvPropertyStatement = this.db.prepare('INSERT INTO tuvProperties (tuvId, name, value) VALUES (?, ?, ?)');
         this.selectTuvPropertiesStatement = this.db.prepare('SELECT name, value FROM tuvProperties WHERE tuvId = ?');
         this.deleteTuvPropertiesStatement = this.db.prepare(
             'DELETE FROM tuvProperties WHERE tuvId IN (SELECT id FROM tuv WHERE tuId = ?)');
+        this.deleteTuvPropertiesByLangStatement = this.db.prepare(
+            'DELETE FROM tuvProperties WHERE tuvId IN (SELECT id FROM tuv WHERE tuId = ? AND lang = ?)');
 
         this.insertTuvNoteStatement = this.db.prepare('INSERT INTO tuvNotes (tuvId, note) VALUES (?, ?)');
         this.selectTuvNotesStatement = this.db.prepare('SELECT note FROM tuvNotes WHERE tuvId = ? ORDER BY id');
         this.deleteTuvNotesStatement = this.db.prepare(
             'DELETE FROM tuvNotes WHERE tuvId IN (SELECT id FROM tuv WHERE tuId = ?)');
+        this.deleteTuvNotesByLangStatement = this.db.prepare(
+            'DELETE FROM tuvNotes WHERE tuvId IN (SELECT id FROM tuv WHERE tuId = ? AND lang = ?)');
 
         this.selectMetadataValuesStatement = this.db.prepare(
             'SELECT DISTINCT value FROM properties WHERE name = ? ORDER BY value');
@@ -352,8 +360,20 @@ export class TranslationMemory {
         let id: number;
         if (existingId !== undefined) {
             id = existingId;
-            // storeTu always replaces a TU's full stored state, so wipe whatever child data is there first
-            this.clearChildData(id);
+            let langs: Set<string> = new Set<string>();
+            tu.getChildren().forEach((child: XMLElement): void => {
+                if ('tuv' === child.getName()) {
+                    let langAttribute: XMLAttribute | undefined = child.getAttribute('xml:lang');
+                    if (langAttribute === undefined) {
+                        langAttribute = child.getAttribute('lang');
+                    }
+                    let lang: string = langAttribute !== undefined ? langAttribute.getValue() : '';
+                    langs.add(this.normalizeLang(lang));
+                }
+            });
+            this.clearTuvDataForLangs(id, langs);
+            this.deletePropertiesStatement.run(id);
+            this.deleteNotesStatement.run(id);
             this.updateTuStatement.run(tuid, syntheticTuid, tuOEncoding, tuDatatype, tuUsagecount, tuLastusagedate,
                 tuCreationtool, tuCreationtoolversion, creationDate, creationId, changeDate, segtype, changeId,
                 tuOTmf, srclang, id);
@@ -388,6 +408,7 @@ export class TranslationMemory {
             if (lang === '') {
                 continue;
             }
+            lang = this.normalizeLang(lang);
             let segElement: XMLElement | undefined = child.getChild('seg');
             if (segElement === undefined) {
                 continue;
@@ -652,11 +673,11 @@ export class TranslationMemory {
 
     private safeLowerCase(text: string, lang: string): string {
         if (this.safeLangs.has(lang)) {
-            return text.toLocaleLowerCase(lang);
+            return text.toLocaleLowerCase(this.safeLangs.get(lang) as string);
         }
         let code: string | undefined = LanguageUtils.normalizeCode(lang);
         if (code) {
-            this.safeLangs.add(code);
+            this.safeLangs.set(lang, code);
             return text.toLocaleLowerCase(code);
         }
         return text.toLowerCase();
@@ -672,8 +693,7 @@ export class TranslationMemory {
             return [];
         }
         if (isRegexp === true) {
-            // validated upfront so an invalid pattern throws here instead of being
-            // silently swallowed by TEXT_MATCHES, which returns 0 (no match) on error
+            // throw error if invalid regexp
             new RegExp(text);
         }
 
@@ -730,9 +750,6 @@ export class TranslationMemory {
     }
 
     compactTouchedLanguages(): void {
-        // compacting only once at the very end lets the delta table grow to the size of the whole
-        // import before ever being merged, so a bulk importer (see TMXContentHandler) should call
-        // this periodically (e.g. alongside its own periodic commit) to keep the delta table small
         this.bulkLanguagesTouched.forEach((lang: string): void => {
             this.compactNgramIndex(lang);
         });
@@ -785,9 +802,6 @@ export class TranslationMemory {
     }
 
     beginTransaction(): void {
-        // storeTu already wraps itself in a SAVEPOINT for standalone atomicity; this lets a bulk
-        // importer (see TMXContentHandler) batch many storeTu calls under one outer transaction,
-        // committing periodically instead of autocommitting every single statement
         this.db.exec('BEGIN');
     }
 
@@ -807,7 +821,7 @@ export class TranslationMemory {
         writeSync(fd, '<?xml version="1.0" encoding="UTF-8"?>\n');
         writeSync(fd, '<!DOCTYPE tmx PUBLIC "-//LISA OSCAR:1998//DTD for Translation Memory eXchange//EN" "tmx14.dtd">\n');
         writeSync(fd, '<tmx version="1.4">\n');
-        writeSync(fd, '<header creationtool="TypesTM" creationtoolversion="' + packageJson.version + '" srclang="' + srcLang +
+        writeSync(fd, '<header creationtool="TypesMem" creationtoolversion="' + packageJson.version + '" srclang="' + srcLang +
             '" adminlang="en" datatype="xml" o-tmf="unknown" segtype="block" creationdate="' + TMUtils.creationDate() + '"/>\n');
         writeSync(fd, '<body>\n');
 
@@ -882,6 +896,22 @@ export class TranslationMemory {
         this.deleteNotesStatement.run(id);
     }
 
+    private clearTuvDataForLangs(id: number, langs: Set<string>): void {
+        langs.forEach((lang: string): void => {
+            let tuvRows: Array<Record<string, SQLOutputValue>> = this.selectTuvByLangStatement.all(id, lang);
+            for (let i: number = 0; i < tuvRows.length; i++) {
+                let puretext: string = tuvRows[i].puretext as string;
+                let ngrams: Array<string> = NGrams.getNGrams(puretext, lang);
+                for (let n: number = 0; n < ngrams.length; n++) {
+                    this.removeFromNgramIndex(lang, ngrams[n], id);
+                }
+            }
+            this.deleteTuvPropertiesByLangStatement.run(id, lang);
+            this.deleteTuvNotesByLangStatement.run(id, lang);
+            this.deleteTuvByLangStatement.run(id, lang);
+        });
+    }
+
     private buildTuvElement(row: Record<string, SQLOutputValue>): XMLElement {
         let tuvElement: XMLElement = new XMLElement('tuv');
         tuvElement.setAttribute(new XMLAttribute('xml:lang', row.lang as string));
@@ -946,14 +976,14 @@ export class TranslationMemory {
         return '' + this.next++;
     }
 
-    private validatedLangTag(lang: string): string {
-        if (this.safeLangs.has(lang)) {
-            return lang.replace(/-/g, '_');
+    private normalizeLang(lang: string): string {
+        if (this.langCache.has(lang)) {
+            return this.langCache.get(lang) as string;
         }
         let code: string | undefined = LanguageUtils.normalizeCode(lang);
         if (code) {
-            this.safeLangs.add(code);
-            return code.replace(/-/g, '_');
+            this.langCache.set(lang, code);
+            return code;
         }
         let safeLang = '';
         for (let i: number = 0; i < lang.length; i++) {
@@ -961,11 +991,17 @@ export class TranslationMemory {
             if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '-') {
                 safeLang += c;
             }
-            if (c === '-') {
-                safeLang += '_';
+            if (c === '_') {
+                safeLang += '-';
             }
         }
+        this.langCache.set(lang, safeLang);
         return safeLang;
+    }
+
+    private validatedLangTag(lang: string): string {
+        lang = this.normalizeLang(lang);
+        return lang.replace(/-/g, '_');
     }
 
     private ensureDeltaNgramTable(lang: string): string {
@@ -989,9 +1025,6 @@ export class TranslationMemory {
     }
 
     private addToNgramIndex(lang: string, ngram: string, id: number): void {
-        // bulk import (storeTMX) writes to the fast delta table and compacts it into the packed
-        // table once the whole file is done; a standalone storeTu call writes straight into the
-        // packed table, since there is no bulk-write pressure to justify a temporary structure
         if (this.bulkNgramMode) {
             let tableName: string = this.ensureDeltaNgramTable(lang);
             let insertStatement: StatementSync = this.db.prepare(
@@ -1015,8 +1048,6 @@ export class TranslationMemory {
     }
 
     private removeFromNgramIndex(lang: string, ngram: string, id: number): void {
-        // an existing entry could be in either table depending on how it was originally added
-        // (bulk import vs. a standalone update), so both are always checked on removal
         let deltaTable: string = this.ensureDeltaNgramTable(lang);
         this.db.prepare('DELETE FROM "' + deltaTable + '" WHERE ngram = ? AND id = ?').run(ngram, id);
 
