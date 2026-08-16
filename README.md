@@ -1,5 +1,6 @@
 # TypesMem
 
+[![npm version](https://img.shields.io/npm/v/typesmem)](https://www.npmjs.com/package/typesmem)
 [![TypeScript](https://img.shields.io/badge/implementation-native%20TypeScript-3178c6)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-EPL--1.0-blue)](LICENSE)
 
@@ -8,7 +9,7 @@ TypesMem is a TypeScript translation memory engine backed by SQLite. It stores t
 ## Why TypesMem
 
 - **No native bindings.** Storage is built on `node:sqlite`, which ships with Node.js itself — no native module to compile, no ABI mismatches under Electron or across platforms.
-- **CJK-friendly fuzzy matching.** Matching uses a custom 3-character sliding-window (trigram) index instead of SQLite's FTS5, since FTS5's tokenizers don't segment Chinese, Japanese, or Korean text well. The index is language-scoped, so each language's trigrams are matched independently.
+- **CJK-friendly fuzzy matching.** Matching uses a custom trigram index instead of SQLite's FTS5, since FTS5's tokenizers don't segment Chinese, Japanese, or Korean text well. The index is language-scoped, so each language's trigrams are matched independently.
 - **Synchronous API.** Every operation is backed by `node:sqlite`'s synchronous `DatabaseSync`, so there's no `Promise`/`async` ceremony for what are, in practice, sub-millisecond local calls.
 - **Full attribute fidelity.** Every optional attribute TMX 1.4 allows on `<tu>` and `<tuv>` (`creationdate`, `creationid`, `changedate`, `changeid`, `usagecount`, `o-encoding`, `o-tmf`, and the rest) round-trips exactly — nothing is fabricated on import, and nothing is silently dropped on export.
 - **Internationalized.** Error messages are localized (English and Spanish included) via a small resource-bundle-based `I18n` class.
@@ -91,7 +92,7 @@ tm.close();
 
 | Method | Description |
 | --- | --- |
-| `storeTu(tu, metadata?)` | Stores a `<tu>` element (a `typesxml` `XMLElement`), returning its `tuid`. If the element already has a `tuid` matching an existing entry, that entry is fully replaced (including all its `<tuv>`s, properties, and notes); otherwise a new entry is created, generating a `tuid` if the element doesn't have one. `metadata` supplies default `<prop>` values for keys not already present on the TU. |
+| `storeTu(tu, metadata?)` | Stores a `<tu>` element (a `typesxml` `XMLElement`), returning its `tuid`. If the element already has a `tuid` matching an existing entry, that entry's TU-level properties and notes are fully replaced, and each `<tuv>` present in the new element replaces (or adds) that language's stored variant — languages not present in the new element are left untouched. Otherwise a new entry is created, generating a `tuid` if the element doesn't have one. `metadata` supplies default `<prop>` values for keys not already present on the TU. |
 | `getTu(tuid)` | Returns the full `<tu>` element for a given `tuid`, or `undefined`. |
 | `removeTu(tuid)` | Deletes a translation unit and all of its associated data. |
 
@@ -103,6 +104,7 @@ tm.close();
 | `searchAll(text, srcLang, similarity, limit?, caseSensitive?)` | Same fuzzy matching as `searchTranslation`, but only requires a `srcLang` match; returns the full `<tu>` element for each hit regardless of what other languages it has. |
 | `concordanceSearch(text, srcLang, limit?, isRegexp?, caseSensitive?)` | Substring or regex search (not fuzzy) against stored `srcLang` text, returning full `<tu>` elements. When `isRegexp` is `true`, `text` is compiled as a regular expression and matching is always case-sensitive, regardless of `caseSensitive`. |
 | `getMetadataValues(field)` | Returns the distinct values stored for a given metadata/property field name, across the whole memory. |
+| `getAllLanguages()` | Returns the distinct language tags present across all stored `<tuv>`s, sorted alphabetically. |
 
 ### TMX import/export
 

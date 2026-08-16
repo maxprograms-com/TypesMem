@@ -569,6 +569,8 @@ export class TranslationMemory {
         if (text.trim() === '') {
             return [];
         }
+        srcLang = this.normalizeLang(srcLang);
+        tgtLang = this.normalizeLang(tgtLang);
         let candidates: Array<FuzzyCandidate> = this.findFuzzyCandidates(text, srcLang, similarity, caseSensitive);
 
         let matches: Array<Match> = [];
@@ -610,6 +612,7 @@ export class TranslationMemory {
         if (text.trim() === '') {
             return [];
         }
+        srcLang = this.normalizeLang(srcLang);
         let candidates: Array<FuzzyCandidate> = this.findFuzzyCandidates(text, srcLang, similarity, caseSensitive);
         candidates.sort((a: FuzzyCandidate, b: FuzzyCandidate): number => b.distance - a.distance);
 
@@ -713,14 +716,15 @@ export class TranslationMemory {
             // throw error if invalid regexp
             new RegExp(text);
         }
-
+        srcLang = this.normalizeLang(srcLang);
         let pattern: string;
         let sql: string;
         if (isRegexp === true) {
             pattern = text;
             sql = 'SELECT DISTINCT tuId FROM tuv WHERE lang = ? AND TEXT_MATCHES(puretext, ?)';
         } else if (caseSensitive === true) {
-            pattern = '*' + text + '*';
+            let escaped: string = text.replace(/[*?\[]/g, (c: string): string => '[' + c + ']');
+            pattern = '*' + escaped + '*';
             sql = 'SELECT DISTINCT tuId FROM tuv WHERE lang = ? AND puretext GLOB ?';
         } else {
             let escaped: string = text.replace(/%/g, '\\%').replace(/_/g, '\\_');
@@ -831,6 +835,8 @@ export class TranslationMemory {
     }
 
     exportMemory(tmxFile: string, langs: Array<string>, srcLang: string): void {
+        langs = langs.map((lang: string): string => this.normalizeLang(lang));
+        srcLang = this.normalizeLang(srcLang);
         let moduleDir: string = dirname(fileURLToPath(import.meta.url));
         let packageJson: { version: string } = JSON.parse(readFileSync(join(moduleDir, '..', 'package.json'), 'utf8'));
 

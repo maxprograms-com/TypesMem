@@ -1,7 +1,7 @@
 {
   "name": "typesmem",
   "productName": "TypesMem",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Translation Memory engine",
   "keywords": [
     "Translation Memory",
@@ -23,7 +23,8 @@
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npm run clean && tsc && node dist/copyResources.js"
+    "build": "npm run clean && tsc && node dist/copyResources.js",
+    "prepack": "npm run build"
   },
   "author": {
     "name": "Rodolfo M. Raya",
