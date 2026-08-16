@@ -123,7 +123,7 @@ export class TranslationMemory {
             'lastusagedate = ?, creationtool = ?, creationtoolversion = ?, creationdate = ?, creationid = ?, ' +
             'changedate = ?, segtype = ?, changeid = ?, oTmf = ?, srclang = ? WHERE id = ?');
         this.deleteTuStatement = this.db.prepare('DELETE FROM tu WHERE id = ?');
-        this.selectIdByTuidStatement = this.db.prepare('SELECT id, syntheticTuid FROM tu WHERE tuid = ?');
+        this.selectIdByTuidStatement = this.db.prepare('SELECT id, syntheticTuid, creationdate, creationid FROM tu WHERE tuid = ?');
         this.selectExportableTusStatement = this.db.prepare(
             'SELECT DISTINCT tuv.tuId AS id, tu.syntheticTuid AS syntheticTuid FROM tuv INNER JOIN tu ON tu.id = tuv.tuId');
 
@@ -278,6 +278,8 @@ export class TranslationMemory {
         let tuid: string;
         let syntheticTuid: number;
         let existingId: number | undefined = undefined;
+        let existingCreationDate: string | null = null;
+        let existingCreationId: string | null = null;
 
         if (tuidAttribute !== undefined) {
             tuid = tuidAttribute.getValue();
@@ -285,6 +287,8 @@ export class TranslationMemory {
             if (existingRow !== undefined) {
                 existingId = existingRow.id as number;
                 syntheticTuid = existingRow.syntheticTuid as number;
+                existingCreationDate = existingRow.creationdate as string | null;
+                existingCreationId = existingRow.creationid as string | null;
             } else {
                 syntheticTuid = 0;
             }
@@ -295,10 +299,10 @@ export class TranslationMemory {
         }
 
         let creationDateAttribute: XMLAttribute | undefined = tu.getAttribute('creationdate');
-        let creationDate: string | null = creationDateAttribute !== undefined ? creationDateAttribute.getValue() : null;
+        let creationDate: string | null = creationDateAttribute !== undefined ? creationDateAttribute.getValue() : existingCreationDate;
 
         let creationIdAttribute: XMLAttribute | undefined = tu.getAttribute('creationid');
-        let creationId: string | null = creationIdAttribute !== undefined ? creationIdAttribute.getValue() : null;
+        let creationId: string | null = creationIdAttribute !== undefined ? creationIdAttribute.getValue() : existingCreationId;
 
         let changeDateAttribute: XMLAttribute | undefined = tu.getAttribute('changedate');
         let changeDate: string | null = changeDateAttribute !== undefined ? changeDateAttribute.getValue() : null;
