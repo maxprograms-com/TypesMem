@@ -24,6 +24,7 @@ import { TMUtils } from "./TMUtils.js";
 import { TMXContentHandler } from "./TMXContentHandler.js";
 
 const SUPPORTED_LANGUAGES: Array<string> = ['en', 'es'];
+export const BATCH_SIZE: number = 500;
 
 interface FuzzyCandidate {
     id: number;
@@ -487,6 +488,25 @@ export class TranslationMemory {
             return undefined;
         }
 
+        let propertyRows: Array<Record<string, SQLOutputValue>> = this.selectPropertiesStatement.all(id);
+        let properties: Array<{ name: string; value: string }> = propertyRows.map(
+            (propertyRow: Record<string, SQLOutputValue>): { name: string; value: string } =>
+                ({ name: propertyRow.name as string, value: propertyRow.value as string }));
+        let noteRows: Array<Record<string, SQLOutputValue>> = this.selectNotesStatement.all(id);
+        let notes: Array<string> = noteRows.map((noteRow: Record<string, SQLOutputValue>): string => noteRow.note as string);
+
+        let tu: XMLElement = this.buildTuElementFromData(row, properties, notes);
+
+        let tuvRows: Array<Record<string, SQLOutputValue>> = this.selectTuvStatement.all(id);
+        for (let i: number = 0; i < tuvRows.length; i++) {
+            tu.addElement(this.buildTuvElement(tuvRows[i]));
+        }
+
+        return tu;
+    }
+
+    private buildTuElementFromData(row: Record<string, SQLOutputValue>, properties: Array<{ name: string; value: string }>,
+            notes: Array<string>): XMLElement {
         let tu: XMLElement = new XMLElement('tu');
         tu.setAttribute(new XMLAttribute('tuid', row.tuid as string));
         if (row.oEncoding !== null) {
@@ -529,24 +549,17 @@ export class TranslationMemory {
             tu.setAttribute(new XMLAttribute('srclang', row.srclang as string));
         }
 
-        let propertyRows: Array<Record<string, SQLOutputValue>> = this.selectPropertiesStatement.all(id);
-        for (let i: number = 0; i < propertyRows.length; i++) {
+        for (let i: number = 0; i < properties.length; i++) {
             let propElement: XMLElement = new XMLElement('prop');
-            propElement.setAttribute(new XMLAttribute('type', propertyRows[i].name as string));
-            propElement.addString(propertyRows[i].value as string);
+            propElement.setAttribute(new XMLAttribute('type', properties[i].name));
+            propElement.addString(properties[i].value);
             tu.addElement(propElement);
         }
 
-        let noteRows: Array<Record<string, SQLOutputValue>> = this.selectNotesStatement.all(id);
-        for (let i: number = 0; i < noteRows.length; i++) {
+        for (let i: number = 0; i < notes.length; i++) {
             let noteElement: XMLElement = new XMLElement('note');
-            noteElement.addString(noteRows[i].note as string);
+            noteElement.addString(notes[i]);
             tu.addElement(noteElement);
-        }
-
-        let tuvRows: Array<Record<string, SQLOutputValue>> = this.selectTuvStatement.all(id);
-        for (let i: number = 0; i < tuvRows.length; i++) {
-            tu.addElement(this.buildTuvElement(tuvRows[i]));
         }
 
         return tu;
@@ -831,32 +844,117 @@ export class TranslationMemory {
 
         let indenter: Indenter = new Indenter(2, 2);
         let tuRows: Array<Record<string, SQLOutputValue>> = this.selectExportableTusStatement.all();
-        for (let i: number = 0; i < tuRows.length; i++) {
-            let id: number = tuRows[i].id as number;
-            let syntheticTuid: number = tuRows[i].syntheticTuid as number;
-            let tu: XMLElement = this.getTuById(id) as XMLElement;
-            if (syntheticTuid === 1) {
-                tu.removeAttribute('tuid');
+
+        for (let start: number = 0; start < tuRows.length; start += BATCH_SIZE) {
+            let batch: Array<Record<string, SQLOutputValue>> = tuRows.slice(start, start + BATCH_SIZE);
+            let ids: Array<number> = batch.map((row: Record<string, SQLOutputValue>): number => row.id as number);
+            let placeholders: string = ids.map((): string => '?').join(',');
+
+            let tuById: Map<number, Record<string, SQLOutputValue>> = new Map<number, Record<string, SQLOutputValue>>();
+            let tuRowsBatch: Array<Record<string, SQLOutputValue>> = this.db.prepare(
+                'SELECT * FROM tu WHERE id IN (' + placeholders + ')').all(...ids);
+            for (let row of tuRowsBatch) {
+                tuById.set(row.id as number, row);
             }
 
-            let tuvElements: Array<XMLElement> = tu.getChildren().filter((child: XMLElement): boolean => child.getName() === 'tuv');
-            let kept: number = 0;
-            for (let j: number = 0; j < tuvElements.length; j++) {
-                let tuvElement: XMLElement = tuvElements[j];
-                let langAttribute: XMLAttribute | undefined = tuvElement.getAttribute('xml:lang');
-                let lang: string = langAttribute !== undefined ? langAttribute.getValue() : '';
-                if (langs.indexOf(lang) === -1) {
-                    tu.removeChild(tuvElement);
-                } else {
+            let propertiesByTu: Map<number, Array<{ name: string; value: string }>> = new Map<number, Array<{ name: string; value: string }>>();
+            let propRows: Array<Record<string, SQLOutputValue>> = this.db.prepare(
+                'SELECT tuId, name, value FROM properties WHERE tuId IN (' + placeholders + ')').all(...ids);
+            for (let row of propRows) {
+                let tuId: number = row.tuId as number;
+                let list: Array<{ name: string; value: string }> | undefined = propertiesByTu.get(tuId);
+                if (list === undefined) {
+                    list = [];
+                    propertiesByTu.set(tuId, list);
+                }
+                list.push({ name: row.name as string, value: row.value as string });
+            }
+
+            let notesByTu: Map<number, Array<string>> = new Map<number, Array<string>>();
+            let noteRows: Array<Record<string, SQLOutputValue>> = this.db.prepare(
+                'SELECT tuId, note FROM notes WHERE tuId IN (' + placeholders + ') ORDER BY tuId, id').all(...ids);
+            for (let row of noteRows) {
+                let tuId: number = row.tuId as number;
+                let list: Array<string> | undefined = notesByTu.get(tuId);
+                if (list === undefined) {
+                    list = [];
+                    notesByTu.set(tuId, list);
+                }
+                list.push(row.note as string);
+            }
+
+            let tuvByTu: Map<number, Array<Record<string, SQLOutputValue>>> = new Map<number, Array<Record<string, SQLOutputValue>>>();
+            let tuvRowsBatch: Array<Record<string, SQLOutputValue>> = this.db.prepare(
+                'SELECT * FROM tuv WHERE tuId IN (' + placeholders + ')').all(...ids);
+            for (let row of tuvRowsBatch) {
+                let tuId: number = row.tuId as number;
+                let list: Array<Record<string, SQLOutputValue>> | undefined = tuvByTu.get(tuId);
+                if (list === undefined) {
+                    list = [];
+                    tuvByTu.set(tuId, list);
+                }
+                list.push(row);
+            }
+
+            let tuvNotesByTuv: Map<number, Array<string>> = new Map<number, Array<string>>();
+            let tuvNoteRows: Array<Record<string, SQLOutputValue>> = this.db.prepare(
+                'SELECT tuvId, note FROM tuvNotes WHERE tuvId IN (SELECT id FROM tuv WHERE tuId IN (' + placeholders + ')) ORDER BY tuvId, id').all(...ids);
+            for (let row of tuvNoteRows) {
+                let tuvId: number = row.tuvId as number;
+                let list: Array<string> | undefined = tuvNotesByTuv.get(tuvId);
+                if (list === undefined) {
+                    list = [];
+                    tuvNotesByTuv.set(tuvId, list);
+                }
+                list.push(row.note as string);
+            }
+
+            let tuvPropertiesByTuv: Map<number, Array<{ name: string; value: string }>> = new Map<number, Array<{ name: string; value: string }>>();
+            let tuvPropRows: Array<Record<string, SQLOutputValue>> = this.db.prepare(
+                'SELECT tuvId, name, value FROM tuvProperties WHERE tuvId IN (SELECT id FROM tuv WHERE tuId IN (' + placeholders + ')) ORDER BY tuvId, id').all(...ids);
+            for (let row of tuvPropRows) {
+                let tuvId: number = row.tuvId as number;
+                let list: Array<{ name: string; value: string }> | undefined = tuvPropertiesByTuv.get(tuvId);
+                if (list === undefined) {
+                    list = [];
+                    tuvPropertiesByTuv.set(tuvId, list);
+                }
+                list.push({ name: row.name as string, value: row.value as string });
+            }
+
+            for (let batchRow of batch) {
+                let id: number = batchRow.id as number;
+                let syntheticTuid: number = batchRow.syntheticTuid as number;
+                let tuRow: Record<string, SQLOutputValue> | undefined = tuById.get(id);
+                if (tuRow === undefined) {
+                    continue;
+                }
+
+                let tu: XMLElement = this.buildTuElementFromData(tuRow, propertiesByTu.get(id) ?? [], notesByTu.get(id) ?? []);
+                if (syntheticTuid === 1) {
+                    tu.removeAttribute('tuid');
+                }
+
+                let tuvRowsForTu: Array<Record<string, SQLOutputValue>> = tuvByTu.get(id) ?? [];
+                let kept: number = 0;
+                for (let tuvRow of tuvRowsForTu) {
+                    let lang: string = tuvRow.lang as string;
+                    if (langs.indexOf(lang) === -1) {
+                        continue;
+                    }
+                    let tuvId: number = tuvRow.id as number;
+                    let tuvElement: XMLElement = this.buildTuvElementFromData(
+                        tuvRow, tuvNotesByTuv.get(tuvId) ?? [], tuvPropertiesByTuv.get(tuvId) ?? []);
+                    tu.addElement(tuvElement);
                     kept++;
                 }
-            }
-            if (kept < 2) {
-                continue;
-            }
+                if (kept < 2) {
+                    continue;
+                }
 
-            indenter.indent(tu);
-            writeSync(fd, tu.toString() + '\n');
+                indenter.indent(tu);
+                writeSync(fd, tu.toString() + '\n');
+            }
         }
 
         writeSync(fd, '</body>\n');
@@ -917,6 +1015,18 @@ export class TranslationMemory {
     }
 
     private buildTuvElement(row: Record<string, SQLOutputValue>): XMLElement {
+        let tuvId: number = Number(row.id);
+        let noteRows: Array<Record<string, SQLOutputValue>> = this.selectTuvNotesStatement.all(tuvId);
+        let notes: Array<string> = noteRows.map((noteRow: Record<string, SQLOutputValue>): string => noteRow.note as string);
+        let propertyRows: Array<Record<string, SQLOutputValue>> = this.selectTuvPropertiesStatement.all(tuvId);
+        let properties: Array<{ name: string; value: string }> = propertyRows.map(
+            (propertyRow: Record<string, SQLOutputValue>): { name: string; value: string } =>
+                ({ name: propertyRow.name as string, value: propertyRow.value as string }));
+        return this.buildTuvElementFromData(row, notes, properties);
+    }
+
+    private buildTuvElementFromData(row: Record<string, SQLOutputValue>, notes: Array<string>,
+            properties: Array<{ name: string; value: string }>): XMLElement {
         let tuvElement: XMLElement = new XMLElement('tuv');
         tuvElement.setAttribute(new XMLAttribute('xml:lang', row.lang as string));
         if (row.oEncoding !== null) {
@@ -953,19 +1063,16 @@ export class TranslationMemory {
             tuvElement.setAttribute(new XMLAttribute('o-tmf', row.oTmf as string));
         }
 
-        let tuvId: number = Number(row.id);
-        let noteRows: Array<Record<string, SQLOutputValue>> = this.selectTuvNotesStatement.all(tuvId);
-        for (let i: number = 0; i < noteRows.length; i++) {
+        for (let i: number = 0; i < notes.length; i++) {
             let noteElement: XMLElement = new XMLElement('note');
-            noteElement.addString(noteRows[i].note as string);
+            noteElement.addString(notes[i]);
             tuvElement.addElement(noteElement);
         }
 
-        let propertyRows: Array<Record<string, SQLOutputValue>> = this.selectTuvPropertiesStatement.all(tuvId);
-        for (let i: number = 0; i < propertyRows.length; i++) {
+        for (let i: number = 0; i < properties.length; i++) {
             let propElement: XMLElement = new XMLElement('prop');
-            propElement.setAttribute(new XMLAttribute('type', propertyRows[i].name as string));
-            propElement.addString(propertyRows[i].value as string);
+            propElement.setAttribute(new XMLAttribute('type', properties[i].name));
+            propElement.addString(properties[i].value);
             tuvElement.addElement(propElement);
         }
 
